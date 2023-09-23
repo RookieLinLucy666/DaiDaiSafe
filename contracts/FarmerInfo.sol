@@ -49,8 +49,11 @@ contract FarmerInfo {
 
     // 三个映射，从idCard到BasicInfo、LoanInfo、FinancialInfo
     mapping(string => BasicInfo) public BasicInfoMapping;
-    mapping(string => LoanInfo) public LoanInfoMapping;
+    mapping(string => mapping(uint256 => LoanInfo)) public LoanInfoMapping; // 农户的贷款信息映射
     mapping(string => FinancialInfo) public FinancialInfoMapping;
+
+    // 添加一个映射，从idCard到贷款信息的数量
+    mapping(string => uint256) public LoanCountMapping;
 
     //从index到农户idCard的映射
     mapping(uint256 => string) public farmers;
@@ -251,7 +254,8 @@ contract FarmerInfo {
     }
 
 //=================================loanInfo的增删查改===============================
-    // 添加农户的贷款信息
+
+    // 添加贷款信息
     function addLoanInfo(
         string memory idCard,
         uint256 loanAmount,
@@ -267,6 +271,10 @@ contract FarmerInfo {
             revert("ID card not found");
         }
 
+        // 增加农户的贷款信息计数，并将其作为索引
+        LoanCountMapping[idCard]++;
+        uint256 loanInfoIndex = LoanCountMapping[idCard];
+        
         // 创建 LoanInfo 结构体
         LoanInfo memory newLoanInfo = LoanInfo(
             idCard,
@@ -276,78 +284,107 @@ contract FarmerInfo {
             repaymentMethod
         );
 
-        // 将 LoanInfo 结构体添加到映射中
-        LoanInfoMapping[idCard] = newLoanInfo;
+        // 将 LoanInfo 结构体添加到映射中，使用 loanInfoIndex 作为索引
+        LoanInfoMapping[idCard][loanInfoIndex] = newLoanInfo;
     }
 
-    // 获取农户的贷款信息
-    function selectLoanInfo(string memory idCard) public view returns (
+    // 根据农户身份证ID查询贷款数量
+    function getFarmerLoanNum(string memory idCard) public view returns (uint256) {
+        return LoanCountMapping[idCard];
+    }
+
+    // 根据农户身份证ID查询贷款金额总数
+    function getFarmerLoanTotalAmount(string memory idCard) public view returns (uint256) {
+        uint256 totalAmount = 0;
+        
+        // 获取该农户的贷款数量
+        uint256 loanCount = LoanCountMapping[idCard];
+
+        // 遍历该农户的所有贷款信息，累加贷款金额
+        for (uint256 i = 1; i <= loanCount; i++) {
+            totalAmount += LoanInfoMapping[idCard][i].loanAmount;
+        }
+
+        return totalAmount;
+    }
+
+    // 根据农户身份证ID和索引查询贷款信息
+    function selectLoanInfo(string memory idCard, uint256 index) public view returns (
         uint256 loanAmount,
         uint256 loanTerm,
         string memory loanPurpose,
         string memory repaymentMethod
     ) {
-        // 使用 selectFarmer 函数检查该 idCard 是否存在
-        int256 index = selectFarmer(idCard);
+        // 获取该农户的贷款数量
+        uint256 loanCount = LoanCountMapping[idCard];
 
-        // 如果未找到匹配的 idCard，则返回空的字段
-        if (index == -1) {
-            return (0, 0, "", "");
-        }
+        // 检查索引是否有效
+        require(index > 0 && index <= loanCount, "Invalid index");
 
-        // 如果找到匹配的 idCard，返回对应的贷款信息字段
-        LoanInfo memory info = LoanInfoMapping[idCard];
+        // 获取指定索引的贷款信息
+        LoanInfo memory loanInfo = LoanInfoMapping[idCard][index];
+
+        // 返回贷款信息的详细字段
         return (
-            info.loanAmount,
-            info.loanTerm,
-            info.loanPurpose,
-            info.repaymentMethod
+            loanInfo.loanAmount,
+            loanInfo.loanTerm,
+            loanInfo.loanPurpose,
+            loanInfo.repaymentMethod
         );
-    }
-
-    // 删除农户的贷款信息
-    function deleteLoanInfo(string memory idCard) public returns (bool) {
-        // 使用 selectFarmer 函数检查该 idCard 是否存在
-        int256 index = selectFarmer(idCard);
-
-        // 如果未找到匹配的 idCard，则返回false
-        if (index == -1) {
-            return false;
-        }
-
-        // 删除 LoanInfo 结构体
-        delete LoanInfoMapping[idCard];
-
-        return true; // 返回true表示删除成功
     }
 
     // 更新农户的贷款信息
     function updateLoanInfo(
         string memory idCard,
-        uint256 loanAmount,
-        uint256 loanTerm,
-        string memory loanPurpose,
-        string memory repaymentMethod
+        uint256 index,
+        uint256 newLoanAmount,
+        uint256 newLoanTerm,
+        string memory newLoanPurpose,
+        string memory newRepaymentMethod
     ) public returns (bool) {
-        // 使用 selectFarmer 函数检查该 idCard 是否存在
-        int256 index = selectFarmer(idCard);
+        // 获取该农户的贷款数量
+        uint256 loanCount = LoanCountMapping[idCard];
 
-        // 如果未找到匹配的 idCard，则返回false
-        if (index == -1) {
-            return false;
-        }
+        // 检查索引是否有效
+        require(index > 0 && index <= loanCount, "Invalid index");
 
-        // 更新 LoanInfo 结构体的字段
-        LoanInfoMapping[idCard] = LoanInfo(
-            idCard,
-            loanAmount,
-            loanTerm,
-            loanPurpose,
-            repaymentMethod
-        );
+        // 获取指定索引的贷款信息
+        LoanInfo storage loanInfo = LoanInfoMapping[idCard][index];
+
+        // 更新贷款信息字段
+        loanInfo.loanAmount = newLoanAmount;
+        loanInfo.loanTerm = newLoanTerm;
+        loanInfo.loanPurpose = newLoanPurpose;
+        loanInfo.repaymentMethod = newRepaymentMethod;
 
         return true; // 返回true表示更新成功
-    }    
+    }
+
+    // 删除农户的贷款信息
+    function deleteLoanInfo(string memory idCard, uint256 index) public returns (bool) {
+        // 获取该农户的贷款数量
+        uint256 loanCount = LoanCountMapping[idCard];
+
+        // 检查索引是否有效
+        require(index > 0 && index <= loanCount, "Invalid index");
+
+        // 删除指定索引的贷款信息
+        delete LoanInfoMapping[idCard][index];
+
+        // 将后续的贷款信息往前移动
+        for (uint256 i = index; i < loanCount; i++) {
+            LoanInfo storage nextLoanInfo = LoanInfoMapping[idCard][i + 1];
+            LoanInfoMapping[idCard][i] = nextLoanInfo;
+        }
+
+        // 将最后一笔贷款信息设为空
+        delete LoanInfoMapping[idCard][loanCount];
+
+        // 减少农户的贷款数量计数
+        LoanCountMapping[idCard]--;
+
+        return true; // 返回true表示删除成功
+    }
 
 //=================================financialInfo的增删查改===============================
     function addFinancialInfo(
